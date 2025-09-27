@@ -3,6 +3,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 import os
 from werkzeug.utils import secure_filename
 import datetime
+from datetime import timezone, timedelta
 
 app = Flask(__name__)
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), 'storage')
@@ -59,7 +60,7 @@ def whatsapp_reply():
                 resp.message("Illegal request: no access or project ID does not exist.")
                 return str(resp)
         else:
-            resp.message("Invalid format. Use: Form request, <project_id>")
+            resp.message("Invalid format. Use: Request Timesheet, <project_id>")
             return str(resp)
 
     # Feature 5: Help for form submit
@@ -92,8 +93,9 @@ def whatsapp_reply():
                 vf.write(str(version))
             
             # Current date timestamp
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            resp.message(f"Received timesheet for George, P1234, {timestamp}, Version {version}.")
+            tz = timezone(timedelta(hours=8))
+            timestamp = datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+            resp.message(f"Received timesheet for George, P1234, {timestamp} GMT+8, Version {version}.")
             return str(resp)
         else:
             resp.message("Only .docx timesheet files are accepted.")
@@ -101,7 +103,7 @@ def whatsapp_reply():
 
     # Feature 7: Help for report
     if msg_lower == '? request report':
-        resp.message("Report, <project_id>, weekly/monthly/<year>: To request report for <project_id>.")
+        resp.message("Report, <project_id>, weekly/monthly/<year>")
         return str(resp)
 
     # Feature 8: Report request
