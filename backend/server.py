@@ -15,9 +15,9 @@ def whatsapp_reply():
     sender = request.form.get("From")
     print(f"Message from {sender}: {incoming_msg}")
     resp = MessagingResponse()
-    
-    # Custom welcome for Twilio Sandbox join message
-    if incoming_msg and incoming_msg.strip().lower().startswith("join"):
+
+    # Custom welcome for Twilio Sandbox hello message
+    if incoming_msg and incoming_msg.strip().lower().startswith("hello"):
         resp.message("CMS System is ready to use. Enter '?' for help.")
         return str(resp)
 
