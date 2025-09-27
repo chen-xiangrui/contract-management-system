@@ -2,6 +2,7 @@ from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
 import os
 from werkzeug.utils import secure_filename
+import datetime
 
 app = Flask(__name__)
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), 'storage')
@@ -13,9 +14,9 @@ def whatsapp_reply():
     sender = request.form.get("From")
     print(f"Message from {sender}: {incoming_msg}")
     resp = MessagingResponse()
-
-    # Feature 1: Welcome message
-    if not incoming_msg or incoming_msg.strip().lower() == 'start':
+    
+    # Custom welcome for Twilio Sandbox join message
+    if incoming_msg and incoming_msg.strip().lower().startswith("join"):
         resp.message("CMS System is ready to use. Enter '?' for help.")
         return str(resp)
 
@@ -23,23 +24,22 @@ def whatsapp_reply():
 
     # Feature 2: Help message
     if msg_lower == '?':
-        help_text = ("Allowable instructions:\n"
-                     "? Form Request: To get format for form request.\n"
-                     "? Form Submit: To get format for form submission.\n"
-                     "? Report: To get format for report request.\n"
-                     "Form Request, <project_id>: To request for form for <project_id>.\n"
-                     "Form Submit, <project_id> (Attach Timesheet File): To submit timesheet form with attachment.\n"
-                     "Report, <project_id>, weekly/monthly/year: To request report for <project_id>.\n")
+        help_text = ("Available instructions:\n"
+                     "    - Request Timesheet\n"
+                     "    - Submit Timesheet\n"
+                     "    - Request Report\n"
+                     "\n"
+                     "Type \"? <instruction>\" for help")
         resp.message(help_text)
         return str(resp)
 
     # Feature 3: Help for form request
-    if msg_lower == '? form request':
-        resp.message("Form Request, <project_id>: To request for form for <project_id>.")
+    if msg_lower == '? request timesheet':
+        resp.message("Request Timesheet, <project_id>")
         return str(resp)
 
     # Feature 4: Form request
-    if msg_lower.startswith('form request'):
+    if msg_lower.startswith('request timesheet'):
         parts = incoming_msg.split(',')
         if len(parts) == 2:
             project_id = parts[1].strip()
@@ -63,36 +63,45 @@ def whatsapp_reply():
             return str(resp)
 
     # Feature 5: Help for form submit
-    if msg_lower == '? form submit':
-        resp.message("Form Submit, <project_id> (Attach Timesheet File): To submit timesheet form with attachment.")
+    if msg_lower == '? submit timesheet':
+        resp.message("[Attach timesheet and send] *Filename not important")
         return str(resp)
 
-    # Feature 6: Form submit with attachment
-    if msg_lower.startswith('form submit'):
-        num_media = int(request.form.get('NumMedia', 0))
-        if num_media > 0:
-            # Extract project_id from message: "Form submit, <project_id>"
-            parts = incoming_msg.split(',')
-            if len(parts) == 2:
-                project_id = parts[1].strip()
-                filename = f"timesheet_{secure_filename(project_id)}.docx"
-                file_path = os.path.join(STORAGE_DIR, filename)
-                # Download and save the file (simulate)
-                # In real use, download from media_url
-                with open(file_path, 'wb') as f:
-                    f.write(b"Received file content (mock)")
-                resp.message(f"Received Timesheet for Project {project_id}. File saved as {filename}.")
-                return str(resp)
-            else:
-                resp.message("Invalid format. Use: Form submit, <project_id> (Attach Timesheet File)")
-                return str(resp)
+    # Feature 6: Timesheet submit with only docx attachment, no text
+    num_media = int(request.form.get('NumMedia', 0))
+    if num_media > 0 and not incoming_msg.strip():
+        media_type = request.form.get('MediaContentType0', '')
+        if media_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            # Hardcode filename
+            filename = "timesheet_P1234.docx"
+            file_path = os.path.join(STORAGE_DIR, filename)
+            # Save the file (simulate, in real use download from media_url)
+            with open(file_path, 'wb') as f:
+                f.write(b"Received file content (mock)")
+            
+            # Version tracking
+            version_file = os.path.join(STORAGE_DIR, "version_timesheet_P1234.txt")
+            version = 1
+            if os.path.exists(version_file):
+                with open(version_file, 'r') as vf:
+                    try:
+                        version = int(vf.read().strip()) + 1
+                    except Exception:
+                        version = 1
+            with open(version_file, 'w') as vf:
+                vf.write(str(version))
+            
+            # Current date timestamp
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            resp.message(f"Received timesheet for George, P1234, {timestamp}, Version {version}.")
+            return str(resp)
         else:
-            resp.message("No attachment found. Please attach a file.")
+            resp.message("Only .docx timesheet files are accepted.")
             return str(resp)
 
     # Feature 7: Help for report
-    if msg_lower == '? report':
-        resp.message("Report, <project_id>, weekly/monthly/year: To request report for <project_id>.")
+    if msg_lower == '? request report':
+        resp.message("Report, <project_id>, weekly/monthly/<year>: To request report for <project_id>.")
         return str(resp)
 
     # Feature 8: Report request
@@ -101,20 +110,30 @@ def whatsapp_reply():
         if len(parts) == 3:
             project_id = parts[1].strip()
             period = parts[2].strip()
-            # Simulate report file
+            # Check if period is a year (4 digits)
             if project_id == 'P1234':
-                report_path = os.path.join(STORAGE_DIR, f"report_{project_id}_{period}.pdf")
+                if period.isdigit() and len(period) == 4:
+                    # Yearly report: report_<project_id>_<year>.pdf
+                    report_filename = f"report_{project_id}_{period}.pdf"
+                elif period.lower() == "monthly":
+                    report_filename = f"report_{project_id}_monthly.pdf"
+                elif period.lower() == "weekly":
+                    report_filename = f"report_{project_id}_weekly.pdf"
+                else:
+                    resp.message("Invalid period. Use weekly, monthly, or a 4-digit year.")
+                    return str(resp)
+                report_path = os.path.join(STORAGE_DIR, report_filename)
                 if not os.path.exists(report_path):
                     with open(report_path, 'wb') as f:
                         f.write(b"Mock report for project P1234, period: " + period.encode())
                 msg = resp.message(f"Report for project {project_id}, period {period} attached.")
-                msg.media(request.url_root + f"storage/report_{project_id}_{period}.pdf")
+                msg.media(request.url_root + f"storage/{report_filename}")
                 return str(resp)
             else:
                 resp.message("Illegal request: no access or project ID does not exist.")
                 return str(resp)
         else:
-            resp.message("Invalid format. Use: Report, <project_id>, weekly/monthly/year")
+            resp.message("Invalid format. Use: Report, <project_id>, weekly/monthly/<year>")
             return str(resp)
 
     # Default response
